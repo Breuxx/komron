@@ -1,5 +1,0 @@
-{
-  "build": {
-    "startCommand": "python app.py"
-  }
-}
