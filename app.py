@@ -5,8 +5,8 @@ from datetime import datetime, timedelta
 from telethon import TelegramClient
 
 # Замените на свои данные из Telegram API
-api_id = 'YOUR_API_ID'
-api_hash = 'YOUR_API_HASH'
+api_id = '1403467'
+api_hash = '15525849e4b493d2143b175f96825f87'
 session_name = 'my_session'  # Имя файла сессии для постоянного подключения
 
 # Регулярное выражение для поиска хештегов
