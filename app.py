@@ -1,30 +1,43 @@
+from fastapi import FastAPI, HTTPException, Query
+import uvicorn
 import re
 import asyncio
 from datetime import datetime, timedelta
 from telethon import TelegramClient
 
-# Замените на свои данные из Telegram API
-api_id = '1403467'  # Ваш API ID (число)
+# Создаем ASGI-приложение
+app = FastAPI()
+
+# Конфигурация для Telegram API
+api_id = '1403467'  # Ваш API ID
 api_hash = '15525849e4b493d2143b175f96825f87'  # Ваш API hash
-session_name = 'my_session'  # Имя файла сессии для постоянного подключения
+session_name = 'my_session'  # Имя файла сессии
 
 # Регулярное выражение для поиска хештегов
 hashtag_pattern = re.compile(r'#\w+')
 
-# Создаем клиента с правильным порядком аргументов: session_name, api_id, api_hash
+# Создаем клиента Telethon
 client = TelegramClient(session_name, api_id, api_hash)
 
-async def fetch_messages(entity, limit=1000):
+@app.on_event("startup")
+async def startup_event():
+    await client.start()
+
+@app.get("/dialogs")
+async def get_dialogs(password: str = Query(..., description="Пароль для доступа")):
     """
-    Получает историю сообщений из указанного диалога (личные, группы, каналы, боты).
+    Возвращает список диалогов (личные, группы, каналы и т.д.).
+    Для доступа необходимо передать параметр password=moloko123.
     """
-    messages = await client.get_messages(entity, limit=limit)
-    return messages
+    if password != "moloko123":
+        raise HTTPException(status_code=403, detail="Неверный пароль")
+    dialogs = await client.get_dialogs()
+    return [{"name": d.name, "id": d.id} for d in dialogs]
 
 def extract_hashtag_messages(messages, target_hashtag=None):
     """
     Извлекает сообщения, содержащие хештеги.
-    Если передан target_hashtag, возвращает только сообщения, где он присутствует.
+    Если указан target_hashtag, возвращает только те сообщения, где он присутствует.
     Возвращает список кортежей: (дата, текст, список найденных хештегов).
     """
     filtered = []
@@ -43,49 +56,33 @@ def get_report(messages):
     """
     Подсчитывает количество сообщений за последние 24 часа, неделю и месяц.
     """
-    # Если сообщения есть, используем tzinfo первого сообщения, иначе просто текущее время
     now = datetime.now(messages[0][0].tzinfo) if messages else datetime.now()
     one_day = now - timedelta(days=1)
     one_week = now - timedelta(weeks=1)
     one_month = now - timedelta(days=30)
-
     msgs_day = [m for m in messages if m[0] >= one_day]
     msgs_week = [m for m in messages if m[0] >= one_week]
     msgs_month = [m for m in messages if m[0] >= one_month]
+    return {"day": len(msgs_day), "week": len(msgs_week), "month": len(msgs_month)}
 
-    report = {
-        'day': len(msgs_day),
-        'week': len(msgs_week),
-        'month': len(msgs_month)
-    }
-    return report
-
-async def main():
-    # Защита паролем
-    password = input("Введите пароль: ")
+@app.get("/report")
+async def report(
+    entity: str = Query(..., description="ID или username диалога"),
+    search_command: str = Query(..., description="Команда поиска: www для всех заявок или w#<хештег> для фильтрации"),
+    password: str = Query(..., description="Пароль для доступа")
+):
+    """
+    Возвращает отчёт по сообщениям выбранного диалога.
+    - entity: ID или username диалога (например, 'username' или '-123456789')
+    - search_command: 'www' – для выборки всех сообщений с хештегами, или 'w#A910' – для поиска по конкретному хештегу.
+    - password: Пароль доступа (moloko123)
+    """
     if password != "moloko123":
-        print("Неверный пароль. Доступ запрещён.")
-        return
-
-    # Авторизация через сессию
-    await client.start()
+        raise HTTPException(status_code=403, detail="Неверный пароль")
     
-    # Вывод списка диалогов для выбора
-    dialogs = await client.get_dialogs()
-    print("Доступные диалоги:")
-    for i, dialog in enumerate(dialogs, start=1):
-        print(f"{i}. {dialog.name} (ID: {dialog.id})")
+    messages = await client.get_messages(entity, limit=1000)
     
-    # Пользователь выбирает нужный диалог (ID или username)
-    entity = input("Введите ID или username диалога: ")
-    messages = await fetch_messages(entity)
-    
-    # Ввод команды для поиска:
-    # Команда "www" выводит все заявки (сообщения с любым хештегом),
-    # а команда "w#<хештег>" выводит только сообщения с указанным хештегом.
-    search_command = input("Введите команду поиска (www для всех заявок, или w#<ваш_хештег>, например: w#A910): ")
     if search_command.startswith("www"):
-        # Все сообщения с хештегами
         hash_messages = extract_hashtag_messages(messages)
     elif search_command.startswith("w#"):
         tag = search_command[2:]
@@ -93,23 +90,14 @@ async def main():
             tag = "#" + tag
         hash_messages = extract_hashtag_messages(messages, target_hashtag=tag)
     else:
-        print("Неверная команда поиска.")
-        await client.disconnect()
-        return
+        raise HTTPException(status_code=400, detail="Неверная команда поиска")
     
-    if hash_messages:
-        report = get_report(hash_messages)
-        print("\nОтчёт по выбранным сообщениям:")
-        print("За день:", report['day'])
-        print("За неделю:", report['week'])
-        print("За месяц:", report['month'])
-        print("\nСообщения:")
-        for date, text, tags in hash_messages:
-            print(f"{date.strftime('%Y-%m-%d %H:%M:%S')}: {text}")
-    else:
-        print("Сообщения не найдены.")
+    report_data = get_report(hash_messages) if hash_messages else {}
+    messages_list = [
+        {"date": m[0].strftime("%Y-%m-%d %H:%M:%S"), "text": m[1], "hashtags": m[2]}
+        for m in hash_messages
+    ]
+    return {"report": report_data, "messages": messages_list}
 
-    await client.disconnect()
-
-if __name__ == '__main__':
-    asyncio.run(main())
+if __name__ == "__main__":
+    uvicorn.run("app:app", host="0.0.0.0", port=8000)
