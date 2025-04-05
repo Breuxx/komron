@@ -1,18 +1,18 @@
 import re
 import asyncio
 from datetime import datetime, timedelta
-
 from telethon import TelegramClient
 
 # Замените на свои данные из Telegram API
-api_id = '1403467'
-api_hash = '15525849e4b493d2143b175f96825f87'
+api_id = '1403467'  # Ваш API ID (число)
+api_hash = '15525849e4b493d2143b175f96825f87'  # Ваш API hash
 session_name = 'my_session'  # Имя файла сессии для постоянного подключения
 
 # Регулярное выражение для поиска хештегов
 hashtag_pattern = re.compile(r'#\w+')
 
-client = TelegramClient(session_name, api_hash, api_id)
+# Создаем клиента с правильным порядком аргументов: session_name, api_id, api_hash
+client = TelegramClient(session_name, api_id, api_hash)
 
 async def fetch_messages(entity, limit=1000):
     """
@@ -43,6 +43,7 @@ def get_report(messages):
     """
     Подсчитывает количество сообщений за последние 24 часа, неделю и месяц.
     """
+    # Если сообщения есть, используем tzinfo первого сообщения, иначе просто текущее время
     now = datetime.now(messages[0][0].tzinfo) if messages else datetime.now()
     one_day = now - timedelta(days=1)
     one_week = now - timedelta(weeks=1)
@@ -69,7 +70,7 @@ async def main():
     # Авторизация через сессию
     await client.start()
     
-    # Вывод списка диалогов
+    # Вывод списка диалогов для выбора
     dialogs = await client.get_dialogs()
     print("Доступные диалоги:")
     for i, dialog in enumerate(dialogs, start=1):
